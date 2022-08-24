@@ -59,11 +59,12 @@ export interface ProxyConfig {
 
 export function createRouter(config: ProxyConfig) {
 
-    const authReqRR = async (suffix: string, method = "get") => {
+    const authReqRR = async (suffix: string, options: { method?: string, headers?: Record<string, string> } = {}) => {
         try {
             return await fetch(urlJoin(config.privateRegistryUrl, suffix), {
-                method: method,
+                method: options.method || "get",
                 headers: {
+                    ...(options.headers || {}),
                     "authorization": `basic ${Buffer.from(
                         config.privateRegistryUsername +
                         ':' +
@@ -97,6 +98,8 @@ export function createRouter(config: ProxyConfig) {
         try {
             console.log("accessing: ", ctx.path);
             await next();
+            ctx.set("x-content-type-options", "nosniff");
+            ctx.set("docker-distribution-api-version", "registry/2.0");
         } catch (error) {
             if (error instanceof AuthenticationError) {
                 const errorMessage: DockerErrorSchema = {
@@ -213,16 +216,22 @@ export function createRouter(config: ProxyConfig) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${repoName}/tags/list`);
-        const remoteTagList = await rrResponse.json();
-        if ("errors" in remoteTagList || !remoteTagList.tags || !remoteTagList.name || !rrResponse.ok) {
+        const rrResponse = await authReqRR(`/v2/${repoName}/tags/list`, {
+            headers: {
+                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+            }
+        });
+        const remoteTagList = await rrResponse.text();
+        if (!rrResponse.ok) {
             throw new Error("There was an error fetching from the remote registry!");
         }
 
         const dockerDigestHeader = rrResponse.headers.get("docker-content-digest");
         if (dockerDigestHeader) {
-            ctx.set("docker-content-digest", dockerDigestHeader)
+            ctx.set("docker-content-digest", dockerDigestHeader);
+            ctx.set("etag", `"${dockerDigestHeader}"`);
         }
+        ctx.response.type = rrResponse.headers.get("content-type") || "application/json";
         ctx.response.body = remoteTagList;
     });
 
@@ -235,8 +244,14 @@ export function createRouter(config: ProxyConfig) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const result = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`)
-        ctx.response.body = result.body;
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`, {
+            headers: {
+                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+            }
+        })
+
+        ctx.response.type = rrResponse.headers.get("content-type") || "application/octet-stream";
+        ctx.response.body = rrResponse.body;
     });
     router.head("/v2/:repo*/blobs/:digest", async (ctx) => {
         validateDigest(ctx.params.digest);
@@ -246,7 +261,12 @@ export function createRouter(config: ProxyConfig) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`, "head");
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`, { 
+            method:"head",
+            headers: {
+                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+            } 
+        });
         if (!rrResponse.ok) {
             throw new Error("There was an error fetching from the remote registry!");
         }
@@ -258,9 +278,11 @@ export function createRouter(config: ProxyConfig) {
 
         const dockerDigestHeader = rrResponse.headers.get("docker-content-digest");
         if (dockerDigestHeader) {
-            ctx.set("docker-content-digest", dockerDigestHeader)
+            ctx.set("docker-content-digest", dockerDigestHeader);
+            ctx.set("etag", `"${dockerDigestHeader}"`);
         }
 
+        ctx.response.type = rrResponse.headers.get("content-type") || "application/octet-stream";
         ctx.response.status = 200;
     });
 
@@ -277,18 +299,24 @@ export function createRouter(config: ProxyConfig) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`);
-        const manifest = await rrResponse.json();
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`, {
+            headers: {
+                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+            }
+        });
+        const manifest = await rrResponse.text();
 
-        if ("errors" in manifest || !rrResponse.ok) {
+        if (!rrResponse.ok) {
             throw new ManifestUnknownError("The manifest was not found!");
         }
 
         const dockerDigestHeader = rrResponse.headers.get("docker-content-digest");
         if (dockerDigestHeader) {
-            ctx.set("docker-content-digest", dockerDigestHeader)
+            ctx.set("docker-content-digest", dockerDigestHeader);
+            ctx.set("etag", `"${dockerDigestHeader}"`);
         }
 
+        ctx.response.type = rrResponse.headers.get("content-type") || "application/json";
         ctx.body = manifest;
     });
     router.head("/v2/:repo*/manifests/:reference", async (ctx) => {
@@ -304,7 +332,12 @@ export function createRouter(config: ProxyConfig) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`, "head");
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`, { 
+            method:"head",  
+            headers: {
+                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+            }
+        });
         if (!rrResponse.ok) {
             throw new ManifestUnknownError("The manifest was not found!");
         }
@@ -316,9 +349,11 @@ export function createRouter(config: ProxyConfig) {
 
         const dockerDigestHeader = rrResponse.headers.get("docker-content-digest");
         if (dockerDigestHeader) {
-            ctx.set("docker-content-digest", dockerDigestHeader)
+            ctx.set("docker-content-digest", dockerDigestHeader);
+            ctx.set("etag", `"${dockerDigestHeader}"`);
         }
-
+        
+        ctx.response.type = rrResponse.headers.get("content-type") || "application/json";
         ctx.response.status = 200;
     });
 

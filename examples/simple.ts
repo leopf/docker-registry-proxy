@@ -8,7 +8,7 @@ const router = createRouter({
     privateRegistryPassword: "1234",
     privateRegistryUsername: "test",
     realmName: "registry",
-    authenticate: () => Promise.resolve({ "proxy/ubuntu": "my-ubuntu/test" })
+    authenticate: async () => [ "my-ubuntu/test" ]
 });
 
 app.use(router.routes());
