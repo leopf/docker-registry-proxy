@@ -3,7 +3,7 @@ import validator from "validator";
 import basicAuth from "basic-auth";
 import fetch from 'cross-fetch';
 import urlJoin from 'url-join';
-import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError } from "./errors";
+import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError, TagInvalidError } from "./errors";
 import KoaRouter from "@koa/router";
 import { DockerErrorSchema, LocalAuthenticationBasic, ProxyConfig, RequestContext } from "./types";
 import { createAuthenticatedFetcher, validateDigest, validateRepositoryName, validateTag } from "./utils";
@@ -100,6 +100,20 @@ export function createRouter(config: ProxyConfig) {
                 };
 
                 ctx.response.status = 404;
+                ctx.response.body = errorMessage;
+            }
+            else if (error instanceof TagInvalidError) {
+                const errorMessage: DockerErrorSchema = {
+                    errors: [
+                        {
+                            code: "TAG_INVALID",
+                            detail: process.env.NODE_ENV === "development" ? error.stack : "",
+                            message: error.message
+                        }
+                    ]
+                };
+
+                ctx.response.status = 400;
                 ctx.response.body = errorMessage;
             }
             else {

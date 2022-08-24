@@ -26,6 +26,12 @@ export class DigestInvalidError extends Error {
     }
 }
 
+export class TagInvalidError extends Error {
+    constructor(msg: string) {
+        super(msg);
+        Object.setPrototypeOf(this, TagInvalidError.prototype);
+    }
+}
 
 export class ManifestUnknownError extends Error {
     constructor(msg: string) {
