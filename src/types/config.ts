@@ -21,7 +21,7 @@ export interface LocalAuthenticationNone {
 export type LocalAuthentication = LocalAuthenticationBasic | LocalAuthenticationNone;
 
 export interface ProxyConfig {
-    realmName: string,
+    realm: string,
 
     remoteRegistryUrl: string,
     remoteAuthentication?: RemoteAuthentication;

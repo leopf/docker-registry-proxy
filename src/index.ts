@@ -43,7 +43,7 @@ export function createRouter(config: ProxyConfig) {
                 };
 
                 ctx.response.status = 403;
-                ctx.set("WWW-Authenticate", `Basic realm=${config.realmName}`);
+                ctx.set("WWW-Authenticate", `Basic realm=${config.realm}`);
                 ctx.response.body = errorMessage;
             }
             else if (error instanceof DigestInvalidError) {
@@ -154,6 +154,7 @@ export function createRouter(config: ProxyConfig) {
             ctx.state = {
                 allowedRepos: new Set(localAuth.scope)
             };
+            await next();
         });
     }   
     else {
@@ -166,7 +167,7 @@ export function createRouter(config: ProxyConfig) {
             repositories: Object.keys(ctx.state.allowedRepos)
         };
     });
-    router.get("/v2/:repo*/tags/list", async (ctx) => {
+    router.get("/v2/:repo+/tags/list", async (ctx) => {
         const repoName = ctx.params.repo;
         validateRepositoryName(repoName);
 
@@ -194,7 +195,7 @@ export function createRouter(config: ProxyConfig) {
     });
 
 
-    router.get("/v2/:repo*/blobs/:digest", async (ctx) => {
+    router.get("/v2/:repo+/blobs/:digest", async (ctx) => {
         validateDigest(ctx.params.digest);
         validateRepositoryName(ctx.params.repo);
 
@@ -211,7 +212,7 @@ export function createRouter(config: ProxyConfig) {
         ctx.response.type = rrResponse.headers.get("content-type") || "application/octet-stream";
         ctx.response.body = rrResponse.body;
     });
-    router.head("/v2/:repo*/blobs/:digest", async (ctx) => {
+    router.head("/v2/:repo+/blobs/:digest", async (ctx) => {
         validateDigest(ctx.params.digest);
         validateRepositoryName(ctx.params.repo);
 
@@ -244,7 +245,7 @@ export function createRouter(config: ProxyConfig) {
         ctx.response.status = 200;
     });
 
-    router.get("/v2/:repo*/manifests/:reference", async (ctx) => {
+    router.get("/v2/:repo+/manifests/:reference", async (ctx) => {
         try {
             validateTag(ctx.params.reference);
         } catch {
@@ -277,7 +278,7 @@ export function createRouter(config: ProxyConfig) {
         ctx.response.type = rrResponse.headers.get("content-type") || "application/json";
         ctx.body = manifest;
     });
-    router.head("/v2/:repo*/manifests/:reference", async (ctx) => {
+    router.head("/v2/:repo+/manifests/:reference", async (ctx) => {
         try {
             validateTag(ctx.params.reference);
         } catch {

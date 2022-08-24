@@ -7,9 +7,9 @@ const router = createRouter({
     remoteRegistryUrl: "http://localhost:5000",
     localAuthentication: {
         type: "none",
-        scope: [ "my-ubuntu/test" ]
+        scope: [ "my-ubuntu" ]
     },
-    realmName: "registry",
+    realm: "http://localhost:5001/v2/",
 });
 
 app.use(router.routes());
