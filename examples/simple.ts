@@ -5,10 +5,11 @@ const app = new Koa();
 
 const router = createRouter({
     remoteRegistryUrl: "http://localhost:5000",
-    privateRegistryPassword: "1234",
-    privateRegistryUsername: "test",
+    localAuthentication: {
+        type: "none",
+        scope: [ "my-ubuntu/test" ]
+    },
     realmName: "registry",
-    authenticate: async () => [ "my-ubuntu/test" ]
 });
 
 app.use(router.routes());
