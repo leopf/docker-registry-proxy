@@ -1,10 +1,20 @@
+export interface BearerAccessToken {
+    token: string;
+    validUntil: Date;
+}
+
 export interface RemoteAuthenticationBasic {
     type: "basic",
     username: string;
     password: string;
 }
 
-export type RemoteAuthentication = RemoteAuthenticationBasic;
+export interface RemoteAuthenticationBearer {
+    type: "bearer",
+    resolveToken: () => Promise<BearerAccessToken>
+}
+
+export type RemoteAuthentication = RemoteAuthenticationBasic | RemoteAuthenticationBearer;
 
 export type AuthenticationScope = null | undefined | string[]; // null or undefined means the authentication failed!
 

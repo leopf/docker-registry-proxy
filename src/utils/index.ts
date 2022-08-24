@@ -1,5 +1,5 @@
 import urljoin from "url-join";
-import { RemoteAuthentication } from "../types";
+import { BearerAccessToken, RemoteAuthentication } from "../types";
 import fetch from 'cross-fetch';
 
 export * from "./validation";
@@ -16,6 +16,26 @@ export function createAuthenticatedFetcher(remoteRegistryUrl: string, remoteAuth
                             remoteAuthentication.username +
                             ':' +
                             remoteAuthentication.password).toString('base64')}`
+                    }
+                });
+            } catch {
+                throw new Error("Failed requesting reqource from remote registry!");
+            }
+        };
+    }
+    else if (remoteAuthentication?.type === "bearer") {
+        let token : BearerAccessToken | undefined = undefined;
+        return async (suffix: string, options: { method?: string, headers?: Record<string, string> } = {}) => {
+            try {
+                if (token === undefined || token.validUntil.getTime() < (new Date()).getTime()) {
+                    token = await remoteAuthentication.resolveToken();
+                }
+
+                return await fetch(urljoin(remoteRegistryUrl, suffix), {
+                    method: options.method || "get",
+                    headers: {
+                        ...(options.headers || {}),
+                        "authorization": `bearer ${token.token}`
                     }
                 });
             } catch {
