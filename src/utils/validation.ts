@@ -1,16 +1,15 @@
-import { DigestInvalidError, RepositoryNameInvalidError } from "../errors";
+import { DigestInvalidError, RepositoryNameInvalidError, TagInvalidError } from "../errors";
 
 export function validateDigest(digest: string) {
     if (!/([A-Fa-f0-9_+.-]+):([A-Fa-f0-9]+)/.test(digest)) {
         throw new DigestInvalidError("The given digest is invalid!");
     }
 }
-// TODO
-export function validateTag(tag: string) {
-    if (!/([A-Fa-f0-9_+.-]+):([A-Fa-f0-9]+)/.test(tag)) {
 
+export function validateTag(tag: string) {
+    if (tag.length > 128 || !/[a-zA-Z0-9_][a-zA-Z0-9_\.\-]*/.test(tag)) {
+        throw new TagInvalidError("The gived tag is invalid!");
     }
-    return;
 }
 
 export function validateRepositoryName(repoName: string) {
