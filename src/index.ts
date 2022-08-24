@@ -8,7 +8,7 @@ import Koa from "koa";
 import KoaRouter from "@koa/router";
 
 interface RequestContext {
-    mappedRepos: Record<string, string> // this repo -> private repo
+    allowedRepos: Set<string>
 }
 
 declare global {
@@ -54,7 +54,7 @@ export interface ProxyConfig {
     privateRegistryUsername: string,
     privateRegistryPassword: string,
 
-    authenticate: (username: string, password: string) => Promise<null | undefined | Record<string, string>>
+    authenticate: (username: string, password: string) => Promise<null | undefined | string[]>
 }
 
 export function createRouter(config: ProxyConfig) {
@@ -185,7 +185,7 @@ export function createRouter(config: ProxyConfig) {
             if (scope) {
 
                 ctx.state = {
-                    mappedRepos: scope
+                    allowedRepos: new Set(scope)
                 };
 
                 await next();
@@ -202,19 +202,18 @@ export function createRouter(config: ProxyConfig) {
     router.get("/v2/", (ctx) => ctx.status = 200);
     router.get("/v2/_catalog", (ctx) => {
         ctx.body = {
-            repositories: Object.keys(ctx.state.mappedRepos)
+            repositories: Object.keys(ctx.state.allowedRepos)
         };
     });
     router.get("/v2/:repo*/tags/list", async (ctx) => {
         const repoName = ctx.params.repo;
         validateRepositoryName(repoName);
 
-        const remoteRepoName = ctx.state.mappedRepos[repoName];
-        if (!remoteRepoName) {
+        if (!ctx.state.allowedRepos.has(repoName)) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${remoteRepoName}/tags/list`);
+        const rrResponse = await authReqRR(`/v2/${repoName}/tags/list`);
         const remoteTagList = await rrResponse.json();
         if ("errors" in remoteTagList || !remoteTagList.tags || !remoteTagList.name || !rrResponse.ok) {
             throw new Error("There was an error fetching from the remote registry!");
@@ -232,24 +231,22 @@ export function createRouter(config: ProxyConfig) {
         validateDigest(ctx.params.digest);
         validateRepositoryName(ctx.params.repo);
 
-        const remoteRepoName = ctx.state.mappedRepos[ctx.params.repo];
-        if (!remoteRepoName) {
+        if (!ctx.state.allowedRepos.has(ctx.params.repo)) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const result = await authReqRR(`/v2/${remoteRepoName}/blobs/${ctx.params.digest}`)
+        const result = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`)
         ctx.response.body = result.body;
     });
     router.head("/v2/:repo*/blobs/:digest", async (ctx) => {
         validateDigest(ctx.params.digest);
         validateRepositoryName(ctx.params.repo);
 
-        const remoteRepoName = ctx.state.mappedRepos[ctx.params.repo];
-        if (!remoteRepoName) {
+        if (!ctx.state.allowedRepos.has(ctx.params.repo)) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${remoteRepoName}/blobs/${ctx.params.digest}`, "head");
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`, "head");
         if (!rrResponse.ok) {
             throw new Error("There was an error fetching from the remote registry!");
         }
@@ -276,19 +273,16 @@ export function createRouter(config: ProxyConfig) {
 
         validateRepositoryName(ctx.params.repo);
 
-        const remoteRepoName = ctx.state.mappedRepos[ctx.params.repo];
-        if (!remoteRepoName) {
+        if (!ctx.state.allowedRepos.has(ctx.params.repo)) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${remoteRepoName}/manifests/${ctx.params.reference}`);
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`);
         const manifest = await rrResponse.json();
 
         if ("errors" in manifest || !rrResponse.ok) {
             throw new ManifestUnknownError("The manifest was not found!");
         }
-
-        manifest.name = ctx.params.repo;
 
         const dockerDigestHeader = rrResponse.headers.get("docker-content-digest");
         if (dockerDigestHeader) {
@@ -306,12 +300,11 @@ export function createRouter(config: ProxyConfig) {
 
         validateRepositoryName(ctx.params.repo);
 
-        const remoteRepoName = ctx.state.mappedRepos[ctx.params.repo];
-        if (!remoteRepoName) {
+        if (!ctx.state.allowedRepos.has(ctx.params.repo)) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${remoteRepoName}/manifests/${ctx.params.reference}`, "head");
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`, "head");
         if (!rrResponse.ok) {
             throw new ManifestUnknownError("The manifest was not found!");
         }
