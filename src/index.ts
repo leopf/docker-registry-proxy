@@ -4,12 +4,9 @@ import basicAuth from "basic-auth";
 import fetch from 'cross-fetch';
 import urlJoin from 'url-join';
 import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError } from "./errors";
-import Koa from "koa";
 import KoaRouter from "@koa/router";
-
-interface RequestContext {
-    allowedRepos: Set<string>
-}
+import { DockerErrorSchema, LocalAuthenticationBasic, ProxyConfig, RequestContext } from "./types";
+import { createAuthenticatedFetcher, validateDigest, validateRepositoryName, validateTag } from "./utils";
 
 declare global {
     namespace Express {
@@ -19,78 +16,11 @@ declare global {
     }
 }
 
-interface DockerErrorSchema {
-    errors: ({
-        code: string,
-        message: string,
-        detail: any,
-    })[]
-}
-
-function validateDigest(digest: string) {
-    if (!/([A-Fa-f0-9_+.-]+):([A-Fa-f0-9]+)/.test(digest)) {
-        throw new DigestInvalidError("The given digest is invalid!");
-    }
-}
-// TODO
-function validateTag(tag: string) {
-    if (!/([A-Fa-f0-9_+.-]+):([A-Fa-f0-9]+)/.test(tag)) {
-
-    }
-    return;
-}
-
-
-function validateRepositoryName(repoName: string) {
-    if (repoName.split("/").some(repoNameComponent => !/[a-z0-9]+(?:[._-][a-z0-9]+)*/i.test(repoNameComponent))) {
-        throw new RepositoryNameInvalidError("The given repository name is invalid!");
-    }
-}
-
-export interface ProxyConfig {
-    realmName: string,
-
-    privateRegistryUrl: string,
-    privateRegistryUsername: string,
-    privateRegistryPassword: string,
-
-    authenticate: (username: string, password: string) => Promise<null | undefined | string[]>
-}
+export * from "./types/config";
 
 export function createRouter(config: ProxyConfig) {
 
-    const authReqRR = async (suffix: string, options: { method?: string, headers?: Record<string, string> } = {}) => {
-        try {
-            return await fetch(urlJoin(config.privateRegistryUrl, suffix), {
-                method: options.method || "get",
-                headers: {
-                    ...(options.headers || {}),
-                    "authorization": `basic ${Buffer.from(
-                        config.privateRegistryUsername +
-                        ':' +
-                        config.privateRegistryPassword).toString('base64')}`
-                }
-            });
-        } catch {
-            throw new Error("Failed requesting reqource from remote registry!");
-        }
-    };
-
-    // const authReqRRJson = async (suffix: string) => {
-    //     try {
-    //         return await fetch(urlJoin(config.privateRegistryUrl, suffix), {
-    //             headers: {
-    //                 "authorization": `basic ${
-    //                     Buffer.from(
-    //                         config.privateRegistryUsername + 
-    //                         ':' + 
-    //                         config.privateRegistryPassword).toString('base64')}`
-    //             }
-    //         }).then(r => r.json());                
-    //     } catch {
-    //         throw new Error("Failed requesting reqource from remote registry!");
-    //     }
-    // };
+    const authReqRR = createAuthenticatedFetcher(config.remoteRegistryUrl, config.remoteAuthentication);
 
     const router = new KoaRouter<RequestContext>();
 
@@ -179,28 +109,42 @@ export function createRouter(config: ProxyConfig) {
         }
     });
 
-    router.use("/v2/", async (ctx, next) => {
-        const user = basicAuth(ctx.req);
-
-        // if (user) {
-            const scope = await config.authenticate(user?.name || "", user?.pass || "");
-
-            if (scope) {
-
-                ctx.state = {
-                    allowedRepos: new Set(scope)
-                };
-
-                await next();
-
-                return;
+    if (config.localAuthentication.type === "basic") {
+        const localAuth = {...config.localAuthentication};
+        router.use("/v2/", async (ctx, next) => {
+            const user = basicAuth(ctx.req);
+            if (user) {
+                const scope = await localAuth.authenticate(user?.name || "", user?.pass || "");
+    
+                if (scope) {
+    
+                    ctx.state = {
+                        allowedRepos: new Set(scope)
+                    };
+    
+                    await next();
+    
+                    return;
+                }
             }
-        // }
+    
+            if (!user) {
+                throw new AuthenticationError("Authentication failed!");
+            }
+        });
+    }
+    else if (config.localAuthentication.type === "none") {
+        const localAuth = {...config.localAuthentication};
 
-        if (!user) {
-            throw new AuthenticationError("Authentication failed!");
-        }
-    });
+        router.use("/v2/", async (ctx, next) => {
+            ctx.state = {
+                allowedRepos: new Set(localAuth.scope)
+            };
+        });
+    }   
+    else {
+        throw new Error("Invalid configuration for localAuthentication!");
+    }
 
     router.get("/v2/", (ctx) => ctx.status = 200);
     router.get("/v2/_catalog", (ctx) => {
