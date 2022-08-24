@@ -26,7 +26,6 @@ export function createRouter(config: ProxyConfig) {
 
     router.use("/v2/", async (ctx, next: express.NextFunction) => {
         try {
-            console.log("accessing: ", ctx.path);
             await next();
             ctx.set("x-content-type-options", "nosniff");
             ctx.set("docker-distribution-api-version", "registry/2.0");
