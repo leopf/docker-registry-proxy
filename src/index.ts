@@ -1,11 +1,8 @@
 import express from "express";
-import validator from "validator";
 import basicAuth from "basic-auth";
-import fetch from 'cross-fetch';
-import urlJoin from 'url-join';
 import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError, TagInvalidError } from "./errors";
 import KoaRouter from "@koa/router";
-import { DockerErrorSchema, LocalAuthenticationBasic, ProxyConfig, RequestContext } from "./types";
+import { DockerErrorSchema, ProxyConfig, RequestContext } from "./types";
 import { createAuthenticatedFetcher, validateDigest, validateRepositoryName, validateTag } from "./utils";
 
 declare global {
@@ -41,8 +38,12 @@ export function createRouter(config: ProxyConfig) {
                     ]
                 };
 
-                ctx.response.status = 403;
-                ctx.set("WWW-Authenticate", `Basic realm=${config.realm}`);
+                ctx.response.status = 401;
+                
+                if (config.localAuthentication.type === "basic") {
+                    ctx.set("www-authenticate", `basic realm="${config.realm}"`);
+                }
+
                 ctx.response.body = errorMessage;
             }
             else if (error instanceof DigestInvalidError) {
@@ -116,7 +117,6 @@ export function createRouter(config: ProxyConfig) {
                 ctx.response.body = errorMessage;
             }
             else {
-                console.log("an error occured: ", error);
                 ctx.response.status = 500;
             }
         }
@@ -128,7 +128,6 @@ export function createRouter(config: ProxyConfig) {
             const user = basicAuth(ctx.req);
             if (user) {
                 const scope = await localAuth.authenticate(user?.name || "", user?.pass || "");
-    
                 if (scope) {
     
                     ctx.state = {
@@ -141,9 +140,7 @@ export function createRouter(config: ProxyConfig) {
                 }
             }
     
-            if (!user) {
-                throw new AuthenticationError("Authentication failed!");
-            }
+            throw new AuthenticationError("Authentication failed!");
         });
     }
     else if (config.localAuthentication.type === "none") {
@@ -160,7 +157,10 @@ export function createRouter(config: ProxyConfig) {
         throw new Error("Invalid configuration for localAuthentication!");
     }
 
-    router.get("/v2/", (ctx) => ctx.status = 200);
+    router.get("/v2/", (ctx) => {
+        ctx.status = 200;
+        ctx.body = "";
+    });
     router.get("/v2/_catalog", (ctx) => {
         ctx.body = {
             repositories: Object.keys(ctx.state.allowedRepos)
