@@ -11,3 +11,12 @@ export interface DockerErrorSchema {
 export interface RequestContext {
     allowedRepos: Set<string>
 }
+
+export interface OAuth2Config {
+    username: string;
+    password: string;
+    regitryUrl: string;
+    fallbackValidity?: number;
+    forceScope?: string;
+    clientId?: string;
+}

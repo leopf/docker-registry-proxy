@@ -1,6 +1,8 @@
 import urljoin from "url-join";
 import { BearerAccessToken, RemoteAuthentication } from "../types";
 import fetch from 'cross-fetch';
+import { createBasicAuthHeaderValue } from "./basic-auth";
+import { oauthGetToken } from "./oauth2";
 
 export * from "./validation";
 
@@ -12,10 +14,7 @@ export function createAuthenticatedFetcher(remoteRegistryUrl: string, remoteAuth
                     method: options.method || "get",
                     headers: {
                         ...(options.headers || {}),
-                        "authorization": `basic ${Buffer.from(
-                            remoteAuthentication.username +
-                            ':' +
-                            remoteAuthentication.password).toString('base64')}`
+                        "authorization": createBasicAuthHeaderValue(remoteAuthentication.username, remoteAuthentication.password)
                     }
                 });
             } catch {
@@ -23,12 +22,19 @@ export function createAuthenticatedFetcher(remoteRegistryUrl: string, remoteAuth
             }
         };
     }
-    else if (remoteAuthentication?.type === "bearer") {
+    else if (remoteAuthentication?.type === "oauth2") {
         let token : BearerAccessToken | undefined = undefined;
         return async (suffix: string, options: { method?: string, headers?: Record<string, string> } = {}) => {
             try {
                 if (token === undefined || token.validUntil.getTime() < (new Date()).getTime()) {
-                    token = await remoteAuthentication.resolveToken();
+                    token = await oauthGetToken({
+                        username: remoteAuthentication.username,
+                        password: remoteAuthentication.password,
+                        regitryUrl: remoteRegistryUrl,
+                        clientId: remoteAuthentication.clientId,
+                        fallbackValidity: remoteAuthentication.fallbackValidity,
+                        forceScope: remoteAuthentication.forceScope,
+                    });
                 }
 
                 return await fetch(urljoin(remoteRegistryUrl, suffix), {

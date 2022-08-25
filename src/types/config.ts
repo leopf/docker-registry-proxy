@@ -10,8 +10,13 @@ export interface RemoteAuthenticationBasic {
 }
 
 export interface RemoteAuthenticationBearer {
-    type: "bearer",
-    resolveToken: () => Promise<BearerAccessToken>
+    type: "oauth2",
+    username: string;
+    password: string;
+
+    fallbackValidity?: number;
+    forceScope?: string;
+    clientId?: string;
 }
 
 export type RemoteAuthentication = RemoteAuthenticationBasic | RemoteAuthenticationBearer;
