@@ -2,10 +2,10 @@ import urljoin from "url-join";
 import { BearerAccessToken, RemoteAuthentication } from "../types";
 import fetch from 'cross-fetch';
 import { createBasicAuthHeaderValue } from "./basic-auth";
-import { oauthGetToken } from "./oauth2";
+import { oauthGetToken } from "./remote-oauth2";
 
 export * from "./validation";
-export * from "./local-oauth";
+export * from "./local-oauth2";
 
 export function createAuthenticatedFetcher(remoteRegistryUrl: string, remoteAuthentication?: RemoteAuthentication) {
     if (remoteAuthentication?.type === "basic") {
