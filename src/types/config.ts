@@ -34,7 +34,8 @@ export interface LocalAuthenticationOAuth {
     service: string,
     tokenLifetime: number,
     useHttps?: boolean,
-    authenticate: (username: string, password: string) => Promise<AuthenticationScope>
+    authenticate: (username: string, password: string) => Promise<boolean>,
+    resolveRepositories: (username: string) => Promise<AuthenticationScope>
 }
 
 export interface LocalAuthenticationNone {

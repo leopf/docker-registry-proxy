@@ -3,7 +3,7 @@ import basicAuth from "basic-auth";
 import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError, TagInvalidError } from "./errors";
 import KoaRouter from "@koa/router";
 import { DockerErrorSchema, DockerOAuth2TokenRequest, ProxyConfig, RequestContext } from "./types";
-import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenWithRepositories, defaultScope, extractRepositoriesFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateTokenRequest } from "./utils";
+import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenForUser, defaultScope, extractUsernameFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateTokenRequest } from "./utils";
 import bodyParser from "koa-body";
 
 declare global {
@@ -164,10 +164,12 @@ export function createRouter(config: ProxyConfig) {
                 throw new AuthenticationError("Bearer token not found!");
             }
 
-            const repos = extractRepositoriesFromToken(token, localAuth.jwtSecret);
-            if (!repos) {
+            const username = extractUsernameFromToken(token, localAuth.jwtSecret);
+            if (!username) {
                 throw new AuthenticationError("Bearer token not found!");
             }
+
+            const repos = await localAuth.resolveRepositories(username);
 
             ctx.state = {
                 allowedRepos: new Set(repos)
@@ -184,13 +186,13 @@ export function createRouter(config: ProxyConfig) {
             validateTokenRequest(tokenRequest, localAuth);
 
             // password and username are defined if validation didnt throw
-            const repos = await localAuth.authenticate(tokenRequest.username!, tokenRequest.password!); 
-            if (!repos) {
+            const successfullyAuthenticated = await localAuth.authenticate(tokenRequest.username!, tokenRequest.password!); 
+            if (!successfullyAuthenticated) {
                 throw new AuthenticationError("Authentication failed!");
             }
 
             const issuedAt = new Date();
-            const token = createTokenWithRepositories(repos, localAuth.jwtSecret, localAuth.tokenLifetime);
+            const token = createTokenForUser(tokenRequest.username!, localAuth.jwtSecret, localAuth.tokenLifetime);
 
             ctx.response.body = {
                 "access_token": token,

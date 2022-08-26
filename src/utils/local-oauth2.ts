@@ -26,28 +26,27 @@ export function extractTokenFromAuthHeader(values: string[]) : string | undefine
     }
 }
 
-export function extractRepositoriesFromToken(token: string, jwtSecret: string | Buffer)  {
+export function extractUsernameFromToken(token: string, jwtSecret: string | Buffer)  {
     const tokenData = jws.verify(token, jwtSecret);
     if (typeof tokenData === "string") {
         return undefined;
     }
 
-    if (Array.isArray(tokenData.repos)) {
-        const validRepos = tokenData.repos.filter(repo => typeof repo === "string");
-        return validRepos as string[];
+    if (typeof tokenData.un === "string") {
+        return tokenData.un;
     }
     else {
         return undefined;
     }
 }
 
-export function createTokenWithRepositories(repos: string[], jwtSecret: string | Buffer, lifetime: number) {
+export function createTokenForUser(username: string, jwtSecret: string | Buffer, lifetime: number) {
     if (typeof lifetime !== "number") {
         throw new Error("Invalid lifetime parameter!");
     }
 
     return jws.sign({
-        repos: new Set(repos.filter(repo => typeof repo === "string"))
+        un: username
     }, jwtSecret, {
         expiresIn: lifetime
     });  
