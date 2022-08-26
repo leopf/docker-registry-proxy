@@ -1,5 +1,6 @@
 import { AuthenticationError, DigestInvalidError, RepositoryNameInvalidError, TagInvalidError } from "../errors";
 import { DockerOAuth2TokenRequest, LocalAuthenticationOAuth, LocalOAuth2TokenData } from "../types";
+import validator from "validator";
 
 export function validateDigest(digest: string) {
     if (digest.length > 1024 || !/([A-Fa-f0-9_+.-]+):([A-Fa-f0-9]+)/.test(digest)) {
@@ -45,7 +46,27 @@ export function validateTokenRequestPassword(tokenRequest: DockerOAuth2TokenRequ
 }
 
 export function validateLocalAuthenticationOAuth(auth: LocalAuthenticationOAuth) {
-    throw new Error("TODO");
+    const serviceParts = auth.service.split(":");
+
+    if (serviceParts.length !== 2 && serviceParts.length !== 1) {
+        throw new Error("The service name must be a fqdn optionally followed by a port!");
+    }
+
+    if (!validator.isFQDN(serviceParts[0], { require_tld: false })) {
+        throw new Error("The service name must be a fqdn optionally followed by a port!");
+    }
+
+    if (serviceParts.length === 2 && !validator.isPort(serviceParts[1])) {
+        throw new Error("The service name must be a fqdn optionally followed by a port!");
+    }
+
+    if (typeof auth.tokenLifetime !== "number") {
+        throw new Error("The token lifetime must be a number of seconds!");
+    }
+
+    if (typeof auth.useHttps !== "boolean") {
+        throw new Error("The useHttps config must be a boolean!");
+    }
 }
 
 export function validateLocalOAuth2TokenData(data: LocalOAuth2TokenData) {
