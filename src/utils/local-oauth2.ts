@@ -29,7 +29,9 @@ export function extractTokenFromAuthHeader(values: string[]) : string | undefine
 }
 
 export function extractDataFromToken(token: string, jwtSecret: string | Buffer) : LocalOAuth2TokenData {
-    const tokenData = jwt.verify(token, jwtSecret);
+    const tokenData = jwt.verify(token, jwtSecret, {
+        algorithms: [ "HS256" ]
+    });
     if (typeof tokenData === "string") {
         throw new AuthenticationError("Invalid token data!");
     }
@@ -55,7 +57,9 @@ export function createTokenWithData(data: LocalOAuth2TokenData, jwtSecret: strin
         throw new Error("Invalid token data generated from config!");
     }
 
-    let options: jwt.SignOptions = {};
+    let options: jwt.SignOptions = {
+        algorithm: "HS256"
+    };
     if (lifetime !== undefined) {
         options.expiresIn = lifetime;
     }
