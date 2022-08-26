@@ -1,5 +1,7 @@
-import { LocalAuthenticationOAuth } from "../types";
-import jws from "jsonwebtoken";
+import { LocalAuthenticationOAuth, LocalOAuth2TokenData } from "../types";
+import jwt from "jsonwebtoken";
+import { validateLocalOAuth2TokenData } from "./validation";
+import { AuthenticationError } from "../errors";
 
 function createRealmFromConfig(service: string, useHttps: boolean) {
     return `http${useHttps ? "s" : ""}://${service}/token`
@@ -26,28 +28,37 @@ export function extractTokenFromAuthHeader(values: string[]) : string | undefine
     }
 }
 
-export function extractUsernameFromToken(token: string, jwtSecret: string | Buffer)  {
-    const tokenData = jws.verify(token, jwtSecret);
+export function extractDataFromToken(token: string, jwtSecret: string | Buffer) : LocalOAuth2TokenData {
+    const tokenData = jwt.verify(token, jwtSecret);
     if (typeof tokenData === "string") {
-        return undefined;
+        throw new AuthenticationError("Invalid token data!");
     }
+    
+    const oauthTokenData = tokenData as LocalOAuth2TokenData;
 
-    if (typeof tokenData.un === "string") {
-        return tokenData.un;
-    }
-    else {
-        return undefined;
-    }
+    validateLocalOAuth2TokenData(oauthTokenData);
+
+    return {
+        t: oauthTokenData.t,
+        un: oauthTokenData.un
+    };
 }
 
-export function createTokenForUser(username: string, jwtSecret: string | Buffer, lifetime: number) {
-    if (typeof lifetime !== "number") {
+export function createTokenWithData(data: LocalOAuth2TokenData, jwtSecret: string | Buffer, lifetime: number | undefined) {
+    if (lifetime !== undefined && typeof lifetime !== "number") {
         throw new Error("Invalid lifetime parameter!");
     }
 
-    return jws.sign({
-        un: username
-    }, jwtSecret, {
-        expiresIn: lifetime
-    });  
+    try {
+        validateLocalOAuth2TokenData(data);        
+    } catch {
+        throw new Error("Invalid token data generated from config!");
+    }
+
+    let options: jwt.SignOptions = {};
+    if (lifetime !== undefined) {
+        options.expiresIn = lifetime;
+    }
+
+    return jwt.sign(data, jwtSecret, options);  
 }

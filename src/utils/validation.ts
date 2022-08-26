@@ -1,5 +1,5 @@
 import { AuthenticationError, DigestInvalidError, RepositoryNameInvalidError, TagInvalidError } from "../errors";
-import { DockerOAuth2TokenRequest, LocalAuthenticationOAuth } from "../types";
+import { DockerOAuth2TokenRequest, LocalAuthenticationOAuth, LocalOAuth2TokenData } from "../types";
 
 export function validateDigest(digest: string) {
     if (digest.length > 1024 || !/([A-Fa-f0-9_+.-]+):([A-Fa-f0-9]+)/.test(digest)) {
@@ -22,18 +22,19 @@ export function validateRepositoryName(repoName: string) {
 }
 
 export function validateTokenRequest(tokenRequest: DockerOAuth2TokenRequest, config: LocalAuthenticationOAuth) {
-    if (tokenRequest.access_type !== undefined && tokenRequest.access_type !== "online") {
-        throw new AuthenticationError("access_type not supported!");
-    }
-
-    if (tokenRequest.grant_type !== "password") {
-        throw new AuthenticationError("grant_type not supported!");
-    }
-
     if (tokenRequest.service !== config.service) {
         throw new AuthenticationError("service not supported!");
     }
+}
 
+export function validateTokenRequestRefreshToken(tokenRequest: DockerOAuth2TokenRequest) {
+    if (!tokenRequest.refresh_token || typeof tokenRequest.refresh_token !== "string") {
+        throw new AuthenticationError("missing refresh_token!");
+    }
+}
+
+
+export function validateTokenRequestPassword(tokenRequest: DockerOAuth2TokenRequest) {
     if (!tokenRequest.username || typeof tokenRequest.username !== "string") {
         throw new AuthenticationError("missing username!");
     }
@@ -45,4 +46,13 @@ export function validateTokenRequest(tokenRequest: DockerOAuth2TokenRequest, con
 
 export function validateLocalAuthenticationOAuth(auth: LocalAuthenticationOAuth) {
     throw new Error("TODO");
+}
+
+export function validateLocalOAuth2TokenData(data: LocalOAuth2TokenData) {
+    if (data.t !== "a" && data.t !== "r") {
+        throw new AuthenticationError("invalid token data!");
+    }
+    if (typeof data.un !== "string") {
+        throw new AuthenticationError("invalid token data!");
+    }
 }

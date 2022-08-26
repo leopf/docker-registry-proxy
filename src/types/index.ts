@@ -31,3 +31,8 @@ export interface DockerOAuth2TokenRequest {
     username?: string,
     password?: string
 }
+
+export interface LocalOAuth2TokenData {
+    t: "r" | "a",
+    un: string
+}

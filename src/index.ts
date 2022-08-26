@@ -3,7 +3,7 @@ import basicAuth from "basic-auth";
 import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError, TagInvalidError } from "./errors";
 import KoaRouter from "@koa/router";
 import { DockerErrorSchema, DockerOAuth2TokenRequest, ProxyConfig, RequestContext } from "./types";
-import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenForUser, defaultScope, extractUsernameFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateTokenRequest } from "./utils";
+import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenWithData, defaultScope, extractDataFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateTokenRequest, validateTokenRequestPassword, validateTokenRequestRefreshToken } from "./utils";
 import bodyParser from "koa-body";
 
 declare global {
@@ -40,13 +40,13 @@ export function createRouter(config: ProxyConfig) {
                 };
 
                 ctx.response.status = 401;
-                
+
                 if (config.localAuthentication.type === "basic") {
                     ctx.set("www-authenticate", `basic realm="${config.realm}"`);
                 }
                 if (config.localAuthentication.type === "oauth") {
                     ctx.set(
-                        "www-authenticate", 
+                        "www-authenticate",
                         createOauthWwwAuthenticateFromConfig(config.localAuthentication));
                 }
 
@@ -129,28 +129,28 @@ export function createRouter(config: ProxyConfig) {
     });
 
     if (config.localAuthentication.type === "basic") {
-        const localAuth = {...config.localAuthentication};
+        const localAuth = { ...config.localAuthentication };
         router.use("/v2/", async (ctx, next) => {
             const user = basicAuth(ctx.req);
             if (user) {
                 const scope = await localAuth.authenticate(user?.name || "", user?.pass || "");
                 if (scope) {
-    
+
                     ctx.state = {
                         allowedRepos: new Set(scope)
                     };
-    
+
                     await next();
-    
+
                     return;
                 }
             }
-    
+
             throw new AuthenticationError("Authentication failed!");
         });
     }
     else if (config.localAuthentication.type === "oauth") {
-        const localAuth = {...config.localAuthentication};
+        const localAuth = { ...config.localAuthentication };
         validateLocalAuthenticationOAuth(localAuth);
 
         router.use("/v2/", async (ctx, next) => {
@@ -159,17 +159,13 @@ export function createRouter(config: ProxyConfig) {
                 throw new AuthenticationError("Missing bearer authorization header!");
             }
 
-            const token = extractTokenFromAuthHeader(Array.isArray(authHeader) ? authHeader : [ authHeader ]);
+            const token = extractTokenFromAuthHeader(Array.isArray(authHeader) ? authHeader : [authHeader]);
             if (!token) {
                 throw new AuthenticationError("Bearer token not found!");
             }
 
-            const username = extractUsernameFromToken(token, localAuth.jwtSecret);
-            if (!username) {
-                throw new AuthenticationError("Bearer token not found!");
-            }
-
-            const repos = await localAuth.resolveRepositories(username);
+            const tokenData = extractDataFromToken(token, localAuth.jwtSecret);
+            const repos = await localAuth.resolveRepositories(tokenData.un);
 
             ctx.state = {
                 allowedRepos: new Set(repos)
@@ -185,25 +181,62 @@ export function createRouter(config: ProxyConfig) {
             const tokenRequest: DockerOAuth2TokenRequest = ctx.request.body;
             validateTokenRequest(tokenRequest, localAuth);
 
-            // password and username are defined if validation didnt throw
-            const successfullyAuthenticated = await localAuth.authenticate(tokenRequest.username!, tokenRequest.password!); 
-            if (!successfullyAuthenticated) {
-                throw new AuthenticationError("Authentication failed!");
+            let username: string;
+            let refreshToken: string | undefined = undefined;
+
+            if (tokenRequest.grant_type === "password") {
+                validateTokenRequestPassword(tokenRequest);
+
+                // password and username are defined if validation didnt throw
+                const successfullyAuthenticated = await localAuth.authenticate(tokenRequest.username!, tokenRequest.password!);
+                if (!successfullyAuthenticated) {
+                    throw new AuthenticationError("Authentication failed!");
+                }
+
+                username = tokenRequest.username!;
+
+                if (tokenRequest.access_type === "offline") {
+                    refreshToken = createTokenWithData({
+                        un: username,
+                        t: "r"
+                    }, localAuth.jwtSecret, undefined)
+                }
+            }
+            else if (tokenRequest.grant_type === "refresh_token") {
+                validateTokenRequestRefreshToken(tokenRequest);
+
+                const refreshTokenData = extractDataFromToken(tokenRequest.refresh_token!, localAuth.jwtSecret);
+                if (refreshTokenData.t !== "r") {
+                    throw new AuthenticationError("Token not valid!");
+                }
+                
+                username = refreshTokenData.un;
+
+                if (tokenRequest.access_type === "offline") {
+                    refreshToken = tokenRequest.refresh_token;
+                }
+            }
+            else {
+                throw new AuthenticationError("grant_type not supported!");
             }
 
             const issuedAt = new Date();
-            const token = createTokenForUser(tokenRequest.username!, localAuth.jwtSecret, localAuth.tokenLifetime);
+            const access_token = createTokenWithData({
+                t: "a",
+                un: username
+            }, localAuth.jwtSecret, localAuth.tokenLifetime);
 
             ctx.response.body = {
-                "access_token": token,
+                "access_token": access_token,
                 "scope": defaultScope,
-                "expires_in": localAuth.tokenLifetime, 
-                "issued_at": issuedAt.toUTCString()
+                "expires_in": localAuth.tokenLifetime,
+                "issued_at": issuedAt.toUTCString(),
+                "refresh_token": refreshToken
             };
         });
     }
     else if (config.localAuthentication.type === "none") {
-        const localAuth = {...config.localAuthentication};
+        const localAuth = { ...config.localAuthentication };
 
         router.use("/v2/", async (ctx, next) => {
             ctx.state = {
@@ -211,7 +244,7 @@ export function createRouter(config: ProxyConfig) {
             };
             await next();
         });
-    }   
+    }
     else {
         throw new Error("Invalid configuration for localAuthentication!");
     }
@@ -235,7 +268,7 @@ export function createRouter(config: ProxyConfig) {
 
         const rrResponse = await authReqRR(`/v2/${repoName}/tags/list`, {
             headers: {
-                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+                ...(ctx.request.header.accept ? { "accept": ctx.request.header.accept } : {})
             }
         });
         const remoteTagList = await rrResponse.text();
@@ -263,7 +296,7 @@ export function createRouter(config: ProxyConfig) {
 
         const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`, {
             headers: {
-                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+                ...(ctx.request.header.accept ? { "accept": ctx.request.header.accept } : {})
             }
         })
 
@@ -278,11 +311,11 @@ export function createRouter(config: ProxyConfig) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`, { 
-            method:"head",
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/blobs/${ctx.params.digest}`, {
+            method: "head",
             headers: {
-                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
-            } 
+                ...(ctx.request.header.accept ? { "accept": ctx.request.header.accept } : {})
+            }
         });
         if (!rrResponse.ok) {
             throw new Error("There was an error fetching from the remote registry!");
@@ -318,7 +351,7 @@ export function createRouter(config: ProxyConfig) {
 
         const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`, {
             headers: {
-                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+                ...(ctx.request.header.accept ? { "accept": ctx.request.header.accept } : {})
             }
         });
         const manifest = await rrResponse.text();
@@ -349,10 +382,10 @@ export function createRouter(config: ProxyConfig) {
             throw new RepositoryNotFoundError("The requested repository was not found!");
         }
 
-        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`, { 
-            method:"head",  
+        const rrResponse = await authReqRR(`/v2/${ctx.params.repo}/manifests/${ctx.params.reference}`, {
+            method: "head",
             headers: {
-                ...(ctx.request.header.accept ? {"accept": ctx.request.header.accept} : {})
+                ...(ctx.request.header.accept ? { "accept": ctx.request.header.accept } : {})
             }
         });
         if (!rrResponse.ok) {
@@ -369,7 +402,7 @@ export function createRouter(config: ProxyConfig) {
             ctx.set("docker-content-digest", dockerDigestHeader);
             ctx.set("etag", `"${dockerDigestHeader}"`);
         }
-        
+
         ctx.response.type = rrResponse.headers.get("content-type") || "application/json";
         ctx.response.status = 200;
     });
