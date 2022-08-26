@@ -41,8 +41,14 @@ export function extractRepositoriesFromToken(token: string, jwtSecret: string | 
     }
 }
 
-export function createTokenWithRepositories(repos: string[], jwtSecret: string | Buffer) {
+export function createTokenWithRepositories(repos: string[], jwtSecret: string | Buffer, lifetime: number) {
+    if (typeof lifetime !== "number") {
+        throw new Error("Invalid lifetime parameter!");
+    }
+
     return jws.sign({
         repos: new Set(repos.filter(repo => typeof repo === "string"))
-    }, jwtSecret);  
+    }, jwtSecret, {
+        expiresIn: lifetime
+    });  
 }

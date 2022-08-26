@@ -190,7 +190,7 @@ export function createRouter(config: ProxyConfig) {
             }
 
             const issuedAt = new Date();
-            const token = createTokenWithRepositories(repos, localAuth.jwtSecret);
+            const token = createTokenWithRepositories(repos, localAuth.jwtSecret, localAuth.tokenLifetime);
 
             ctx.response.body = {
                 "access_token": token,
