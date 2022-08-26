@@ -6,14 +6,6 @@ import { DockerErrorSchema, DockerOAuth2TokenRequest, ProxyConfig, RequestContex
 import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenWithData, defaultScope, extractDataFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateTokenRequest, validateTokenRequestPassword, validateTokenRequestRefreshToken } from "./utils";
 import bodyParser from "koa-body";
 
-declare global {
-    namespace Express {
-        interface Request {
-            context: RequestContext
-        }
-    }
-}
-
 export * from "./types/config";
 
 export function createRouter(config: ProxyConfig) {
