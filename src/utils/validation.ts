@@ -1,5 +1,5 @@
 import { AuthenticationError, DigestInvalidError, RepositoryNameInvalidError, TagInvalidError } from "../errors";
-import { DockerOAuth2TokenRequest, LocalAuthenticationOAuth, LocalOAuth2TokenData } from "../types";
+import { DockerOAuth2TokenRequest, DockerTokenRequest, LocalAuthenticationOAuth, LocalOAuth2TokenData } from "../types";
 import validator from "validator";
 
 export function validateDigest(digest: string) {
@@ -22,7 +22,13 @@ export function validateRepositoryName(repoName: string) {
     }
 }
 
-export function validateTokenRequest(tokenRequest: DockerOAuth2TokenRequest, config: LocalAuthenticationOAuth) {
+export function validateOAuth2TokenRequest(tokenRequest: DockerOAuth2TokenRequest, config: LocalAuthenticationOAuth) {
+    if (tokenRequest.service !== config.service) {
+        throw new AuthenticationError("service not supported!");
+    }
+}
+
+export function validateTokenRequest(tokenRequest: DockerTokenRequest, config: LocalAuthenticationOAuth) {
     if (tokenRequest.service !== config.service) {
         throw new AuthenticationError("service not supported!");
     }

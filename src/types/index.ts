@@ -9,7 +9,8 @@ export interface DockerErrorSchema {
 }
 
 export interface RequestContext {
-    allowedRepos: Set<string>
+    allowedRepos: Set<string>,
+    username?: string
 }
 
 export interface DockerOAuth2Config {
@@ -30,6 +31,13 @@ export interface DockerOAuth2TokenRequest {
     refresh_token?: string,
     username?: string,
     password?: string
+}
+
+export interface DockerTokenRequest {
+    service: string,
+    client_id?: string,
+    scope: string,
+    offline_token: boolean,
 }
 
 export interface LocalOAuth2TokenData {

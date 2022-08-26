@@ -2,8 +2,8 @@ import express from "express";
 import basicAuth from "basic-auth";
 import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError, TagInvalidError } from "./errors";
 import KoaRouter from "@koa/router";
-import { DockerErrorSchema, DockerOAuth2TokenRequest, ProxyConfig, RequestContext } from "./types";
-import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenWithData, defaultScope, extractDataFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateTokenRequest, validateTokenRequestPassword, validateTokenRequestRefreshToken } from "./utils";
+import { DockerErrorSchema, DockerOAuth2TokenRequest, DockerTokenRequest, ProxyConfig, RequestContext } from "./types";
+import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenWithData, defaultScope, extractDataFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateOAuth2TokenRequest as validateOAuth2TokenRequest, validateTokenRequestPassword, validateTokenRequestRefreshToken, validateTokenRequest } from "./utils";
 import bodyParser from "koa-body";
 
 export * from "./types/config";
@@ -125,11 +125,12 @@ export function createRouter(config: ProxyConfig) {
         router.use("/v2/", async (ctx, next) => {
             const user = basicAuth(ctx.req);
             if (user) {
-                const scope = await localAuth.authenticate(user?.name || "", user?.pass || "");
+                const scope = await localAuth.authenticate(user.name, user.pass);
                 if (scope) {
 
                     ctx.state = {
-                        allowedRepos: new Set(scope)
+                        allowedRepos: new Set(scope),
+                        username: user.name
                     };
 
                     await next();
@@ -145,33 +146,13 @@ export function createRouter(config: ProxyConfig) {
         const localAuth = { ...config.localAuthentication };
         validateLocalAuthenticationOAuth(localAuth);
 
-        router.use("/v2/", async (ctx, next) => {
-            const authHeader = ctx.request.headers.authorization;
-            if (!authHeader) {
-                throw new AuthenticationError("Missing bearer authorization header!");
-            }
-
-            const token = extractTokenFromAuthHeader(Array.isArray(authHeader) ? authHeader : [authHeader]);
-            if (!token) {
-                throw new AuthenticationError("Bearer token not found!");
-            }
-
-            const tokenData = extractDataFromToken(token, localAuth.jwtSecret);
-            const repos = await localAuth.resolveRepositories(tokenData.un);
-
-            ctx.state = {
-                allowedRepos: new Set(repos)
-            };
-
-            await next();
-        });
         router.post("/token", bodyParser({ urlencoded: true }), async (ctx) => {
             if (ctx.request.headers["content-type"]?.toLocaleLowerCase() !== "application/x-www-form-urlencoded") {
                 throw new AuthenticationError("Content type for token request not supported!");
             }
 
             const tokenRequest: DockerOAuth2TokenRequest = ctx.request.body;
-            validateTokenRequest(tokenRequest, localAuth);
+            validateOAuth2TokenRequest(tokenRequest, localAuth);
 
             let username: string;
             let refreshToken: string | undefined = undefined;
@@ -226,13 +207,92 @@ export function createRouter(config: ProxyConfig) {
                 "refresh_token": refreshToken
             };
         });
+
+        router.use("/v2/", async (ctx, next) => {
+            const authHeader = ctx.request.headers.authorization;
+            if (!authHeader) {
+                throw new AuthenticationError("Missing authorization header!");
+            }
+
+            const basicAuthUser = basicAuth(ctx.req);
+            if (basicAuthUser) {
+                if (await localAuth.authenticate(basicAuthUser.name, basicAuthUser.pass)) {
+                    const repos = await localAuth.resolveRepositories(basicAuthUser.name);
+
+                    ctx.state = {
+                        allowedRepos: new Set(repos),
+                        username: basicAuthUser.name
+                    };
+        
+                    await next();
+                }
+                else {
+                    throw new AuthenticationError("Authentication failed!");
+                }
+            }
+            else {
+                const token = extractTokenFromAuthHeader(Array.isArray(authHeader) ? authHeader : [authHeader]);
+                if (!token) {
+                    throw new AuthenticationError("Bearer token not found!");
+                }
+    
+                const tokenData = extractDataFromToken(token, localAuth.jwtSecret);
+                const repos = await localAuth.resolveRepositories(tokenData.un);
+    
+                ctx.state = {
+                    allowedRepos: new Set(repos),
+                    username: tokenData.un
+                };
+    
+                await next();
+            }
+        });
+
+        router.get("/token", async (ctx) => {
+            if (!ctx.state.username) {
+                throw new AuthenticationError("Not authenticated!");
+            }
+
+            const q = ctx.request.query;
+            console.log("token request query: ", q);
+
+            const tokenRequest: DockerTokenRequest = {
+                client_id: (Array.isArray(q["client_id"]) ? q["client_id"][0] : q["client_id"]) as string,
+                scope: (Array.isArray(q["scope"]) ? q["scope"][0] : q["scope"]) as string,
+                service: (Array.isArray(q["service"]) ? q["service"][0] : q["service"]) as string,
+                offline_token: "true" === String(Array.isArray(q["offline_token"]) ? q["offline_token"][0] : q["offline_token"]).toLowerCase()
+            };
+            validateTokenRequest(tokenRequest, localAuth);
+
+            let refreshToken : string | undefined = undefined;
+            if (tokenRequest.offline_token) {
+                refreshToken = createTokenWithData({
+                    t: "r",
+                    un: ctx.state.username
+                }, localAuth.jwtSecret, undefined);
+            }
+
+            const issuedAt = new Date();
+            const access_token = createTokenWithData({
+                t: "a",
+                un: ctx.state.username
+            }, localAuth.jwtSecret, localAuth.tokenLifetime);
+
+            ctx.response.body = {
+                "access_token": access_token,
+                "token": access_token,
+                "expires_in": localAuth.tokenLifetime,
+                "issued_at": issuedAt.toUTCString(),
+                "refresh_token": refreshToken
+            };
+        });
     }
     else if (config.localAuthentication.type === "none") {
         const localAuth = { ...config.localAuthentication };
 
         router.use("/v2/", async (ctx, next) => {
             ctx.state = {
-                allowedRepos: new Set(localAuth.scope)
+                allowedRepos: new Set(localAuth.scope),
             };
             await next();
         });
