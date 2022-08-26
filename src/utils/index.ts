@@ -5,6 +5,7 @@ import { createBasicAuthHeaderValue } from "./basic-auth";
 import { oauthGetToken } from "./oauth2";
 
 export * from "./validation";
+export * from "./local-oauth";
 
 export function createAuthenticatedFetcher(remoteRegistryUrl: string, remoteAuthentication?: RemoteAuthentication) {
     if (remoteAuthentication?.type === "basic") {

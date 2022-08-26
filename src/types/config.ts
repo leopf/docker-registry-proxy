@@ -28,12 +28,21 @@ export interface LocalAuthenticationBasic {
     authenticate: (username: string, password: string) => Promise<AuthenticationScope>
 }
 
+export interface LocalAuthenticationOAuth {
+    type: "oauth",
+    jwtSecret: string | Buffer;
+    service: string,
+    tokenLifetime: number,
+    useHttps?: boolean,
+    authenticate: (username: string, password: string) => Promise<AuthenticationScope>
+}
+
 export interface LocalAuthenticationNone {
     type: "none",
     scope: AuthenticationScope;
 }
 
-export type LocalAuthentication = LocalAuthenticationBasic | LocalAuthenticationNone;
+export type LocalAuthentication = LocalAuthenticationBasic | LocalAuthenticationNone | LocalAuthenticationOAuth;
 
 export interface ProxyConfig {
     realm: string,

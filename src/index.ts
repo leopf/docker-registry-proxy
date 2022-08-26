@@ -2,8 +2,9 @@ import express from "express";
 import basicAuth from "basic-auth";
 import { AuthenticationError, DigestInvalidError, ManifestUnknownError, RepositoryNameInvalidError, RepositoryNotFoundError, TagInvalidError } from "./errors";
 import KoaRouter from "@koa/router";
-import { DockerErrorSchema, ProxyConfig, RequestContext } from "./types";
-import { createAuthenticatedFetcher, validateDigest, validateRepositoryName, validateTag } from "./utils";
+import { DockerErrorSchema, DockerOAuth2TokenRequest, ProxyConfig, RequestContext } from "./types";
+import { createAuthenticatedFetcher, createOauthWwwAuthenticateFromConfig, createTokenWithRepositories, defaultScope, extractRepositoriesFromToken, extractTokenFromAuthHeader, validateDigest, validateLocalAuthenticationOAuth, validateRepositoryName, validateTag, validateTokenRequest } from "./utils";
+import bodyParser from "koa-body";
 
 declare global {
     namespace Express {
@@ -42,6 +43,11 @@ export function createRouter(config: ProxyConfig) {
                 
                 if (config.localAuthentication.type === "basic") {
                     ctx.set("www-authenticate", `basic realm="${config.realm}"`);
+                }
+                if (config.localAuthentication.type === "oauth") {
+                    ctx.set(
+                        "www-authenticate", 
+                        createOauthWwwAuthenticateFromConfig(config.localAuthentication));
                 }
 
                 ctx.response.body = errorMessage;
@@ -141,6 +147,57 @@ export function createRouter(config: ProxyConfig) {
             }
     
             throw new AuthenticationError("Authentication failed!");
+        });
+    }
+    else if (config.localAuthentication.type === "oauth") {
+        const localAuth = {...config.localAuthentication};
+        validateLocalAuthenticationOAuth(localAuth);
+
+        router.use("/v2/", async (ctx, next) => {
+            const authHeader = ctx.request.headers.authorization;
+            if (!authHeader) {
+                throw new AuthenticationError("Missing bearer authorization header!");
+            }
+
+            const token = extractTokenFromAuthHeader(Array.isArray(authHeader) ? authHeader : [ authHeader ]);
+            if (!token) {
+                throw new AuthenticationError("Bearer token not found!");
+            }
+
+            const repos = extractRepositoriesFromToken(token, localAuth.jwtSecret);
+            if (!repos) {
+                throw new AuthenticationError("Bearer token not found!");
+            }
+
+            ctx.state = {
+                allowedRepos: new Set(repos)
+            };
+
+            await next();
+        });
+        router.post("/token", bodyParser({ urlencoded: true }), async (ctx) => {
+            if (ctx.request.headers["content-type"]?.toLocaleLowerCase() !== "application/x-www-form-urlencoded") {
+                throw new AuthenticationError("Content type for token request not supported!");
+            }
+
+            const tokenRequest: DockerOAuth2TokenRequest = ctx.request.body;
+            validateTokenRequest(tokenRequest, localAuth);
+
+            // password and username are defined if validation didnt throw
+            const repos = await localAuth.authenticate(tokenRequest.username!, tokenRequest.password!); 
+            if (!repos) {
+                throw new AuthenticationError("Authentication failed!");
+            }
+
+            const issuedAt = new Date();
+            const token = createTokenWithRepositories(repos, localAuth.jwtSecret);
+
+            ctx.response.body = {
+                "access_token": token,
+                "scope": defaultScope,
+                "expires_in": localAuth.tokenLifetime, 
+                "issued_at": issuedAt.toUTCString()
+            };
         });
     }
     else if (config.localAuthentication.type === "none") {
