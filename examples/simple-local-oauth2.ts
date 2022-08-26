@@ -14,9 +14,9 @@ const router = createRouter({
             }   
             return false;
         },
-        jwtSecret: "password",
+        jwtSecret: "password", // Set this to a secure value
         service: "localhost:5001",
-        tokenLifetime: 1000000,
+        tokenLifetime: 900,
     },
     realm: "Registry",
 });
