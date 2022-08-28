@@ -208,12 +208,29 @@ export function createRouter(config: ProxyConfig) {
             };
         });
 
-        router.use([ "/v2/", "/token" ], async (ctx, next) => {
+        router.use("/v2/", async (ctx, next) => {
             const authHeader = ctx.request.headers.authorization;
             if (!authHeader) {
                 throw new AuthenticationError("Missing authorization header!");
             }
+            
+            const token = extractTokenFromAuthHeader(Array.isArray(authHeader) ? authHeader : [authHeader]);
+            if (!token) {
+                throw new AuthenticationError("Bearer token not found!");
+            }
 
+            const tokenData = extractDataFromToken(token, localAuth.jwtSecret);
+            const repos = await localAuth.resolveRepositories(tokenData.un);
+
+            ctx.state = {
+                allowedRepos: new Set(repos),
+                username: tokenData.un
+            };
+
+            await next();
+        });
+
+        router.use("/token", async (ctx, next) => {
             const basicAuthUser = basicAuth(ctx.req);
             if (basicAuthUser) {
                 if (await localAuth.authenticate(basicAuthUser.name, basicAuthUser.pass)) {
@@ -225,31 +242,15 @@ export function createRouter(config: ProxyConfig) {
                     };
         
                     await next();
-                }
-                else {
-                    throw new AuthenticationError("Authentication failed!");
+                    return;
                 }
             }
-            else {
-                const token = extractTokenFromAuthHeader(Array.isArray(authHeader) ? authHeader : [authHeader]);
-                if (!token) {
-                    throw new AuthenticationError("Bearer token not found!");
-                }
-    
-                const tokenData = extractDataFromToken(token, localAuth.jwtSecret);
-                const repos = await localAuth.resolveRepositories(tokenData.un);
-    
-                ctx.state = {
-                    allowedRepos: new Set(repos),
-                    username: tokenData.un
-                };
-    
-                await next();
-            }
+
+            throw new AuthenticationError("Authentication failed!");
         });
 
         router.get("/token", async (ctx) => {
-            if (!ctx.state.username) {
+            if (!ctx.state.username) { // should never happen
                 throw new AuthenticationError("Not authenticated!");
             }
 
@@ -279,7 +280,7 @@ export function createRouter(config: ProxyConfig) {
 
             ctx.response.body = {
                 "access_token": access_token,
-                "token": access_token,
+                "token": access_token, // this might be a problem...
                 "expires_in": localAuth.tokenLifetime,
                 "issued_at": issuedAt.toISOString(),
                 "refresh_token": refreshToken
