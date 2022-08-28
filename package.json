@@ -10,6 +10,11 @@
   "keywords": [ "docker", "container", "koajs", "proxy", "registry" ],
   "author": "leopf",
   "license": "MIT",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "dependencies": {
     "@koa/router": "^12.0.0",
     "@types/basic-auth": "^1.1.3",
