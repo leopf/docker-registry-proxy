@@ -1,14 +1,15 @@
 {
   "name": "docker-registry-proxy",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.0.1",
+  "description": "A proxy for the docker registry v2 http api written in node.js",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "prepublishOnly": "tsc"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [ "docker", "container", "koajs", "proxy", "registry" ],
+  "author": "leopf",
+  "license": "MIT",
   "dependencies": {
     "@koa/router": "^12.0.0",
     "@types/basic-auth": "^1.1.3",
