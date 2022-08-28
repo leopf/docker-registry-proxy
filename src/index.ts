@@ -14,7 +14,7 @@ export function createRouter(config: ProxyConfig) {
 
     const router = new KoaRouter<RequestContext>();
 
-    router.use("/v2/", async (ctx, next: express.NextFunction) => {
+    router.use(["/v2/", "/token"], async (ctx, next: express.NextFunction) => {
         try {
             await next();
             ctx.set("x-content-type-options", "nosniff");
@@ -203,12 +203,12 @@ export function createRouter(config: ProxyConfig) {
                 "access_token": access_token,
                 "scope": defaultScope,
                 "expires_in": localAuth.tokenLifetime,
-                "issued_at": issuedAt.toUTCString(),
+                "issued_at": issuedAt.toISOString(),
                 "refresh_token": refreshToken
             };
         });
 
-        router.use("/v2/", async (ctx, next) => {
+        router.use([ "/v2/", "/token" ], async (ctx, next) => {
             const authHeader = ctx.request.headers.authorization;
             if (!authHeader) {
                 throw new AuthenticationError("Missing authorization header!");
@@ -254,7 +254,6 @@ export function createRouter(config: ProxyConfig) {
             }
 
             const q = ctx.request.query;
-            console.log("token request query: ", q);
 
             const tokenRequest: DockerTokenRequest = {
                 client_id: (Array.isArray(q["client_id"]) ? q["client_id"][0] : q["client_id"]) as string,
@@ -282,7 +281,7 @@ export function createRouter(config: ProxyConfig) {
                 "access_token": access_token,
                 "token": access_token,
                 "expires_in": localAuth.tokenLifetime,
-                "issued_at": issuedAt.toUTCString(),
+                "issued_at": issuedAt.toISOString(),
                 "refresh_token": refreshToken
             };
         });

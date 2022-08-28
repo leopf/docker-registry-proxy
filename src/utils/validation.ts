@@ -70,7 +70,7 @@ export function validateLocalAuthenticationOAuth(auth: LocalAuthenticationOAuth)
         throw new Error("The token lifetime must be a number of seconds!");
     }
 
-    if (typeof auth.useHttps !== "boolean") {
+    if (auth.useHttps !== undefined && typeof auth.useHttps !== "boolean") {
         throw new Error("The useHttps config must be a boolean!");
     }
 }
